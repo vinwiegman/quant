@@ -1,0 +1,24 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+
+.pytest_cache/
+.coverage
+htmlcov/
+.ruff_cache/
+
+# Cached market data - regenerated on demand, never committed
+*.parquet
+.cache/
+
+# Generated reports, except the chart the README links to
+docs/*.csv
+
+.env
+.DS_Store
+.idea/
+.vscode/
