@@ -38,9 +38,7 @@ def make_features(close: pd.Series, volume: pd.Series | None = None) -> pd.DataF
         features[f"price_to_ma_{days}d"] = close / moving_average - 1.0
 
     for days in (10, 20):
-        features[f"volatility_{days}d"] = returns_1d.rolling(
-            days, min_periods=days
-        ).std()
+        features[f"volatility_{days}d"] = returns_1d.rolling(days, min_periods=days).std()
 
     features["rsi_14d"] = _rsi(close, window=14)
 

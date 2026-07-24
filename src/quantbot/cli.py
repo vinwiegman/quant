@@ -119,7 +119,7 @@ def main(argv: list[str] | None = None) -> int:
     wf.add_argument("--end", default="2024-12-31")
     wf.add_argument("--min-train-years", type=int, default=5)
     wf.add_argument("--test-years", type=int, default=1)
-    wf.add_argument("--threshold", type=float, default=0.5)
+    wf.add_argument("--threshold", type=float, default=0.55)
     wf.add_argument("--cost-bps", type=float, default=5.0)
     wf.add_argument("--cache-dir", default=None, help="optional price-cache directory")
     wf.add_argument("--out", default="results")

@@ -16,21 +16,24 @@ The walk-forward experiment trains a logistic classifier on at least five years
 of past SPY observations, predicts the next unseen one-year block, and expands
 the training window after each fold. It never uses a random train/test split.
 
-The generated run contains 2,465 unique out-of-sample decisions from 2015-03-16
-through 2024-12-27. It uses a 0.50 probability threshold and charges 5 bps of
+The model uses 11 point-in-time features: returns over four horizons, distance
+from three moving averages, volatility over two windows, RSI, and MACD. The
+generated run contains 2,466 unique out-of-sample decisions from 2015-03-16
+through 2024-12-30. It uses a 0.55 probability threshold and charges 5 bps of
 turnover costs.
 
 | Portfolio | CAGR | Cumulative return | Volatility | Sharpe | Max drawdown | Hit rate | Position changes | Annual turnover |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| Walk-forward strategy | 11.38% | 186.96% | 17.37% | 0.71 | -33.72% | 54.26% | 52 | 5.42x |
-| SPY buy and hold | 13.18% | 235.67% | 17.68% | 0.79 | -33.72% | 54.86% | 0 | 0.00x |
-| SPY above 50-day MA | 6.07% | 77.92% | 10.59% | 0.61 | -20.26% | 54.67% | 176 | 18.09x |
+| Walk-forward strategy | 5.44% | 67.90% | 13.34% | 0.46 | -18.46% | 39.38% | 860 | 87.99x |
+| SPY buy and hold | 13.13% | 234.45% | 17.68% | 0.79 | -33.72% | 54.84% | 0 | 0.00x |
+| SPY above 50-day MA | 6.06% | 77.92% | 10.58% | 0.61 | -20.26% | 54.67% | 177 | 18.19x |
 
 ![SPY walk-forward performance](results/performance.png)
 
 The classifier trails buy-and-hold in this sample. That is the honest
 out-of-sample result; the validation and reporting infrastructure is the
-deliverable, not a tuned winning backtest.
+deliverable, not a tuned winning backtest. Its high turnover also shows that a
+probability threshold alone is not yet a practical execution policy.
 
 The experiment writes:
 
