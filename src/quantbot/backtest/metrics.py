@@ -23,6 +23,13 @@ def cagr(returns: pd.Series, periods_per_year: int = TRADING_DAYS) -> float:
     return total_growth ** (1.0 / years) - 1.0
 
 
+def cumulative_return(returns: pd.Series) -> float:
+    """Total compounded return over the complete series."""
+    if len(returns) == 0:
+        return float("nan")
+    return float((1.0 + returns).prod() - 1.0)
+
+
 def annual_volatility(returns: pd.Series, periods_per_year: int = TRADING_DAYS) -> float:
     return float(returns.std(ddof=1) * np.sqrt(periods_per_year))
 
@@ -88,6 +95,7 @@ def summary(
     def _row(r: pd.Series) -> dict[str, float]:
         return {
             "CAGR": cagr(r, periods_per_year),
+            "Cumulative return": cumulative_return(r),
             "Volatility": annual_volatility(r, periods_per_year),
             "Sharpe": sharpe_ratio(r, periods_per_year=periods_per_year),
             "Sortino": sortino_ratio(r, periods_per_year=periods_per_year),

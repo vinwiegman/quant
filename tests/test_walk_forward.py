@@ -1,0 +1,63 @@
+from __future__ import annotations
+
+import numpy as np
+import pandas as pd
+
+from quantbot.validation.walk_forward import chronological_folds, walk_forward_predict
+
+
+class RecordingModel:
+    fitted_indices: list[pd.DatetimeIndex] = []
+    predicted_indices: list[pd.DatetimeIndex] = []
+
+    def fit(self, X: pd.DataFrame, y: pd.Series) -> RecordingModel:
+        self.fitted_indices.append(X.index.copy())
+        return self
+
+    def predict_proba(self, X: pd.DataFrame) -> np.ndarray:
+        self.predicted_indices.append(X.index.copy())
+        probability = np.linspace(0.25, 0.75, len(X))
+        return np.column_stack([1.0 - probability, probability])
+
+
+def _data() -> tuple[pd.DataFrame, pd.Series]:
+    index = pd.date_range("2010-01-01", "2017-12-31", freq="B")
+    X = pd.DataFrame({"feature": np.arange(len(index))}, index=index)
+    y = pd.Series(np.arange(len(index)) % 2, index=index)
+    return X, y
+
+
+def test_every_training_date_precedes_every_test_date():
+    X, _ = _data()
+    for train, test in chronological_folds(X.index):
+        assert X.index[train].max() < X.index[test].min()
+
+
+def test_test_observations_never_enter_model_fitting():
+    RecordingModel.fitted_indices.clear()
+    RecordingModel.predicted_indices.clear()
+    X, y = _data()
+    walk_forward_predict(X, y, RecordingModel)
+
+    for fitted, predicted in zip(
+        RecordingModel.fitted_indices, RecordingModel.predicted_indices, strict=True
+    ):
+        assert fitted.intersection(predicted).empty
+        assert fitted.max() < predicted.min()
+
+
+def test_out_of_sample_predictions_retain_correct_dates():
+    RecordingModel.fitted_indices.clear()
+    RecordingModel.predicted_indices.clear()
+    X, y = _data()
+    probabilities = walk_forward_predict(X, y, RecordingModel)
+    expected = RecordingModel.predicted_indices[0].append(RecordingModel.predicted_indices[1:])
+
+    assert probabilities.index.equals(expected)
+
+
+def test_each_test_date_is_predicted_at_most_once():
+    X, y = _data()
+    probabilities = walk_forward_predict(X, y, RecordingModel)
+
+    assert probabilities.index.is_unique
