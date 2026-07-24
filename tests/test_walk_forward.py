@@ -2,8 +2,15 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
+import pytest
 
-from quantbot.validation.walk_forward import chronological_folds, walk_forward_predict
+from quantbot.features import make_features
+from quantbot.validation.walk_forward import (
+    _spy_dataset,
+    chronological_folds,
+    run_spy_walk_forward,
+    walk_forward_predict,
+)
 
 
 class RecordingModel:
@@ -61,3 +68,24 @@ def test_each_test_date_is_predicted_at_most_once():
     probabilities = walk_forward_predict(X, y, RecordingModel)
 
     assert probabilities.index.is_unique
+
+
+def test_spy_dataset_uses_the_shared_feature_pipeline():
+    index = pd.date_range("2010-01-01", periods=120, freq="B")
+    close = pd.Series(100.0 + np.arange(len(index)), index=index)
+
+    X, target, forward_return = _spy_dataset(close)
+
+    assert list(X.columns) == list(make_features(close).columns)
+    assert X.index.equals(target.index)
+    assert X.index.equals(forward_return.index)
+    assert not X.isna().any().any()
+    assert set(target.unique()) <= {0, 1}
+
+
+def test_probability_threshold_must_be_valid():
+    index = pd.date_range("2010-01-01", periods=120, freq="B")
+    close = pd.Series(100.0 + np.arange(len(index)), index=index)
+
+    with pytest.raises(ValueError, match="threshold"):
+        run_spy_walk_forward(close, RecordingModel, threshold=1.01, out_dir=None)

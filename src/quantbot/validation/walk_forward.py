@@ -18,6 +18,7 @@ from quantbot.backtest.metrics import (
     max_drawdown,
     sharpe_ratio,
 )
+from quantbot.features import build_dataset
 
 
 class ProbabilisticClassifier(Protocol):
@@ -102,21 +103,11 @@ def walk_forward_predict(
 
 
 def _spy_dataset(close: pd.Series) -> tuple[pd.DataFrame, pd.Series, pd.Series]:
-    returns = close.pct_change()
-    features = pd.DataFrame(
-        {
-            "return_1d": returns,
-            "return_5d": close.pct_change(5),
-            "return_21d": close.pct_change(21),
-            "distance_50d": close / close.rolling(50).mean() - 1.0,
-            "volatility_21d": returns.rolling(21).std(),
-        },
-        index=close.index,
-    )
-    next_return = returns.shift(-1).rename("market_return")
-    target = (next_return > 0).astype(int).rename("target")
-    valid = features.notna().all(axis=1) & next_return.notna()
-    return features.loc[valid], target.loc[valid], next_return.loc[valid]
+    dataset = build_dataset(close)
+    features = dataset.drop(columns="target")
+    target = dataset["target"].astype(int)
+    next_return = (close.shift(-1) / close - 1.0).rename("market_return")
+    return features, target, next_return.reindex(dataset.index)
 
 
 def _metric_row(
@@ -143,7 +134,7 @@ def run_spy_walk_forward(
     model_factory: Callable[[], ProbabilisticClassifier] | None = None,
     min_train_years: int = 5,
     test_years: int = 1,
-    threshold: float = 0.5,
+    threshold: float = 0.55,
     cost_bps: float = 5.0,
     out_dir: str | Path | None = "results",
 ) -> WalkForwardResult:
@@ -151,6 +142,8 @@ def run_spy_walk_forward(
     close = close.dropna().sort_index().rename("close")
     if close.index.has_duplicates:
         raise ValueError("close index must contain unique dates")
+    if not 0.0 <= threshold <= 1.0:
+        raise ValueError("threshold must be between zero and one")
     X, target, forward_return = _spy_dataset(close)
 
     if model_factory is None:
@@ -200,9 +193,7 @@ def run_spy_walk_forward(
     benchmarks = {"SPY buy and hold": buy_hold, "SPY above 50-day MA": ma_returns}
     metrics = pd.DataFrame(
         {
-            "Walk-forward strategy": _metric_row(
-                strategy_returns, position, strategy_turnover
-            ),
+            "Walk-forward strategy": _metric_row(strategy_returns, position, strategy_turnover),
             "SPY buy and hold": _metric_row(
                 buy_hold,
                 pd.Series(1.0, index=evaluation_dates),
@@ -247,10 +238,7 @@ def _write_results(result: WalkForwardResult, out_dir: Path) -> None:
 
     curves = {
         "Walk-forward strategy": (1.0 + result.predictions["strategy_return"]).cumprod(),
-        **{
-            name: (1.0 + returns).cumprod()
-            for name, returns in result.benchmark_returns.items()
-        },
+        **{name: (1.0 + returns).cumprod() for name, returns in result.benchmark_returns.items()},
     }
     fig, (top, bottom) = plt.subplots(
         2, 1, figsize=(11, 7), sharex=True, gridspec_kw={"height_ratios": [2, 1]}
