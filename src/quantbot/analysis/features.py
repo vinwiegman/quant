@@ -34,6 +34,7 @@ def run_feature_analysis(
     cost_bps: float = 5.0,
     n_repeats: int = 5,
     random_state: int = 42,
+    volume: pd.Series | None = None,
     out_dir: str | Path | None = "results",
 ) -> FeatureAnalysisResult:
     """Analyze features without fitting or scoring on future observations."""
@@ -43,7 +44,7 @@ def run_feature_analysis(
         raise ValueError("n_repeats must be at least one")
 
     close = close.dropna().sort_index().rename("close")
-    X, target, _ = build_spy_dataset(close)
+    X, target, _ = build_spy_dataset(close, volume=volume)
     permutation_rows: list[dict[str, str | float | int]] = []
     ablation_rows: list[dict[str, str | float]] = []
 
@@ -69,6 +70,7 @@ def run_feature_analysis(
                 entry_threshold,
                 exit_threshold,
                 cost_bps,
+                volume,
             )
         )
 
@@ -141,6 +143,7 @@ def _feature_ablation(
     entry_threshold: float,
     exit_threshold: float | None,
     cost_bps: float,
+    volume: pd.Series | None,
 ) -> list[dict[str, str | float]]:
     rows: list[dict[str, str | float]] = []
     baseline = _run_ablation_case(
@@ -152,6 +155,7 @@ def _feature_ablation(
         entry_threshold,
         exit_threshold,
         cost_bps,
+        volume,
     )
     rows.append({"model": model_name, "dropped_feature": "(baseline)", **baseline})
 
@@ -166,6 +170,7 @@ def _feature_ablation(
             entry_threshold,
             exit_threshold,
             cost_bps,
+            volume,
         )
         rows.append(
             {
@@ -188,6 +193,7 @@ def _run_ablation_case(
     entry_threshold: float,
     exit_threshold: float | None,
     cost_bps: float,
+    volume: pd.Series | None,
 ) -> dict[str, float]:
     result = run_spy_walk_forward(
         close,
@@ -198,6 +204,7 @@ def _run_ablation_case(
         exit_threshold=exit_threshold,
         cost_bps=cost_bps,
         feature_columns=feature_columns,
+        volume=volume,
         out_dir=None,
     )
     row = result.metrics.loc["Walk-forward strategy"]

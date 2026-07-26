@@ -28,6 +28,7 @@ def run_model_comparison(
     entry_threshold: float = 0.55,
     exit_threshold: float | None = 0.45,
     cost_bps: float = 5.0,
+    volume: pd.Series | None = None,
     out_dir: str | Path | None = "results",
 ) -> ModelComparisonResult:
     """Evaluate all models with identical data, folds, costs, and policy."""
@@ -45,6 +46,7 @@ def run_model_comparison(
             threshold=entry_threshold,
             exit_threshold=exit_threshold,
             cost_bps=cost_bps,
+            volume=volume,
             out_dir=None,
         )
         results[name] = result
