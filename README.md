@@ -16,15 +16,16 @@ The walk-forward experiment trains a logistic classifier on at least five years
 of past SPY observations, predicts the next unseen one-year block, and expands
 the training window after each fold. It never uses a random train/test split.
 
-The model uses 11 point-in-time features: returns over four horizons, distance
-from three moving averages, volatility over two windows, RSI, and MACD. The
+The model uses 13 point-in-time features: returns over four horizons, distance
+from three moving averages, volatility over two windows, RSI, MACD, daily
+volume change, and volume relative to its 20-day average. The
 generated run contains 2,466 unique out-of-sample decisions from 2015-03-16
 through 2024-12-30. It uses a 0.55 probability threshold and charges 5 bps of
 turnover costs.
 
 | Portfolio | CAGR | Cumulative return | Volatility | Sharpe | Max drawdown | Hit rate | Position changes | Annual turnover |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| Walk-forward strategy | 5.44% | 67.90% | 13.34% | 0.46 | -18.46% | 39.38% | 860 | 87.99x |
+| Walk-forward strategy | 4.61% | 55.38% | 13.69% | 0.40 | -28.04% | 39.71% | 870 | 89.01x |
 | SPY buy and hold | 13.13% | 234.45% | 17.68% | 0.79 | -33.72% | 54.84% | 0 | 0.00x |
 | SPY above 50-day MA | 6.06% | 77.92% | 10.58% | 0.61 | -20.26% | 54.67% | 177 | 18.19x |
 
@@ -45,8 +46,8 @@ period.
 
 | Model | Accuracy | Precision | Recall | ROC AUC | CAGR | Sharpe | Max drawdown | Position changes | Annual turnover |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| Logistic regression | 54.26% | 54.72% | 94.96% | 0.491 | 12.22% | 0.75 | -30.39% | 20 | 2.15x |
-| Gradient boosting | 53.65% | 55.85% | 72.87% | 0.516 | 7.67% | 0.54 | -30.86% | 375 | 38.32x |
+| Logistic regression | 54.06% | 54.68% | 93.55% | 0.494 | 11.46% | 0.72 | -33.72% | 18 | 1.94x |
+| Gradient boosting | 52.39% | 54.99% | 71.53% | 0.504 | 6.01% | 0.45 | -32.84% | 395 | 40.36x |
 
 ![Model comparison](results/model_comparison.png)
 
@@ -64,8 +65,8 @@ ROC-AUC is averaged over 10 folds and five deterministic repeats.
 
 | Model | Highest-ranked feature | Mean ROC-AUC decrease | Standard deviation |
 | --- | --- | ---: | ---: |
-| Logistic regression | 5-day return | 0.0227 | 0.0348 |
-| Gradient boosting | 5-day return | 0.0069 | 0.0159 |
+| Logistic regression | 5-day return | 0.0235 | 0.0368 |
+| Gradient boosting | 5-day return | 0.0084 | 0.0188 |
 
 ![Permutation importance](results/permutation_importance.png)
 
@@ -79,8 +80,12 @@ after removing each feature:
 
 ![Feature ablation](results/feature_ablation.png)
 
-- Removing 1-day or 5-day returns reduces logistic ROC-AUC by about 0.009.
-- Removing the 5-day return reduces gradient-boosting ROC-AUC by about 0.010.
+- Removing the 5-day return reduces logistic ROC-AUC by about 0.007 and
+  gradient-boosting ROC-AUC by about 0.005.
+- Removing volume relative to its 20-day average reduces logistic ROC-AUC by
+  about 0.005, but its permutation uncertainty is still larger than its mean.
+- Removing either volume feature improves gradient-boosting ROC-AUC and
+  Sharpe, suggesting that model is fitting noise in the volume inputs.
 - Removing some moving-average features slightly improves gradient boosting,
   suggesting redundancy or noise rather than independent signal.
 - Changes in Sharpe can be much larger than changes in ROC-AUC because a small
@@ -244,7 +249,7 @@ becomes a held position on *t+1*, and earns the next close-to-close return.
 ## Project design
 
 ```text
-data/        price loading and reproducible Parquet caching
+data/        adjusted OHLCV loading and reproducible Parquet caching
 signals/     Signal interface and portfolio-weight generation
 validation/  expanding-window model evaluation and reporting
 backtest/    vectorized, cost-aware engine and metrics

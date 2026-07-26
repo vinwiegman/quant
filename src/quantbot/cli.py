@@ -13,7 +13,7 @@ import pandas as pd
 
 from .analysis import run_feature_analysis
 from .backtest.engine import run_backtest
-from .data.loader import load_prices
+from .data.loader import load_ohlcv, load_prices
 from .models import MODEL_NAMES, get_model_factory
 from .signals.momentum import CrossSectionalMomentum
 from .validation import run_model_comparison, run_spy_walk_forward
@@ -85,15 +85,16 @@ def _write_report(result, benchmark: pd.Series, out_dir: Path) -> None:
 
 def _walk_forward(args: argparse.Namespace) -> int:
     cache_dir = Path(args.cache_dir) if args.cache_dir else None
-    prices = load_prices(["SPY"], start=args.start, end=args.end, cache_dir=cache_dir)
+    market = load_ohlcv("SPY", start=args.start, end=args.end, cache_dir=cache_dir)
     result = run_spy_walk_forward(
-        prices["SPY"],
+        market["close"],
         model_factory=get_model_factory(args.model),
         min_train_years=args.min_train_years,
         test_years=args.test_years,
         threshold=args.threshold,
         exit_threshold=args.exit_threshold,
         cost_bps=args.cost_bps,
+        volume=market["volume"],
         out_dir=args.out,
     )
     print(result.metrics.to_string(float_format=lambda value: f"{value:,.4f}"))
@@ -103,14 +104,15 @@ def _walk_forward(args: argparse.Namespace) -> int:
 
 def _compare_models(args: argparse.Namespace) -> int:
     cache_dir = Path(args.cache_dir) if args.cache_dir else None
-    prices = load_prices(["SPY"], start=args.start, end=args.end, cache_dir=cache_dir)
+    market = load_ohlcv("SPY", start=args.start, end=args.end, cache_dir=cache_dir)
     result = run_model_comparison(
-        prices["SPY"],
+        market["close"],
         min_train_years=args.min_train_years,
         test_years=args.test_years,
         entry_threshold=args.entry_threshold,
         exit_threshold=args.exit_threshold,
         cost_bps=args.cost_bps,
+        volume=market["volume"],
         out_dir=args.out,
     )
     print(result.metrics.to_string(float_format=lambda value: f"{value:,.4f}"))
@@ -120,10 +122,10 @@ def _compare_models(args: argparse.Namespace) -> int:
 
 def _analyze_features(args: argparse.Namespace) -> int:
     cache_dir = Path(args.cache_dir) if args.cache_dir else None
-    prices = load_prices(["SPY"], start=args.start, end=args.end, cache_dir=cache_dir)
+    market = load_ohlcv("SPY", start=args.start, end=args.end, cache_dir=cache_dir)
     models = MODEL_NAMES if args.model == "all" else (args.model,)
     result = run_feature_analysis(
-        prices["SPY"],
+        market["close"],
         models=models,
         min_train_years=args.min_train_years,
         test_years=args.test_years,
@@ -132,6 +134,7 @@ def _analyze_features(args: argparse.Namespace) -> int:
         cost_bps=args.cost_bps,
         n_repeats=args.repeats,
         random_state=args.random_state,
+        volume=market["volume"],
         out_dir=args.out,
     )
     print("\nPermutation importance")

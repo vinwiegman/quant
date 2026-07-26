@@ -73,3 +73,55 @@ def load_prices(
     close.index = pd.to_datetime(close.index).tz_localize(None)
     close.to_parquet(path)
     return close
+
+
+def load_ohlcv(
+    ticker: str,
+    start: str = "2010-01-01",
+    end: str = "2024-12-31",
+    interval: str = "1d",
+    cache_dir: Path | None = None,
+    force_refresh: bool = False,
+) -> pd.DataFrame:
+    """Download adjusted daily OHLCV data for one instrument.
+
+    The close and other price columns are adjusted consistently by yfinance;
+    volume remains the reported traded volume. A separate cache suffix keeps
+    OHLCV files distinct from the existing close-only cache.
+    """
+    ticker = ticker.strip().upper()
+    if not ticker:
+        raise ValueError("ticker cannot be empty")
+    cache_dir = cache_dir or DEFAULT_CACHE
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    key = _cache_key((ticker,), start, end, interval)
+    path = cache_dir / f"{key}-ohlcv.parquet"
+
+    if path.exists() and not force_refresh:
+        return pd.read_parquet(path)
+
+    import yfinance as yf
+
+    raw = yf.download(
+        ticker,
+        start=start,
+        end=end,
+        interval=interval,
+        auto_adjust=True,
+        progress=False,
+    )
+    if raw.empty:
+        raise ValueError(f"no data returned for {ticker} between {start} and {end}")
+
+    columns: dict[str, pd.Series] = {}
+    for field in ("Open", "High", "Low", "Close", "Volume"):
+        values = raw[field]
+        if isinstance(values, pd.DataFrame):
+            values = values[ticker] if ticker in values.columns else values.iloc[:, 0]
+        columns[field.lower()] = values.astype(float)
+
+    ohlcv = pd.DataFrame(columns).dropna()
+    ohlcv.index = pd.to_datetime(ohlcv.index).tz_localize(None)
+    ohlcv.index.name = "date"
+    ohlcv.to_parquet(path)
+    return ohlcv

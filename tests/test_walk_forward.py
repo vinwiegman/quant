@@ -83,6 +83,18 @@ def test_spy_dataset_uses_the_shared_feature_pipeline():
     assert set(target.unique()) <= {0, 1}
 
 
+def test_spy_dataset_adds_volume_features_when_volume_is_available():
+    index = pd.date_range("2010-01-01", periods=120, freq="B")
+    close = pd.Series(100.0 + np.arange(len(index)), index=index)
+    volume = pd.Series(1_000_000.0 + 100.0 * np.arange(len(index)), index=index)
+
+    X, target, forward_return = build_spy_dataset(close, volume=volume)
+
+    assert {"volume_change_1d", "volume_to_average_20d"} <= set(X.columns)
+    assert X.index.equals(target.index)
+    assert X.index.equals(forward_return.index)
+
+
 def test_probability_threshold_must_be_valid():
     index = pd.date_range("2010-01-01", periods=120, freq="B")
     close = pd.Series(100.0 + np.arange(len(index)), index=index)

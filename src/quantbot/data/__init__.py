@@ -1,3 +1,3 @@
-from .loader import load_prices
+from .loader import load_ohlcv, load_prices
 
-__all__ = ["load_prices"]
+__all__ = ["load_ohlcv", "load_prices"]
