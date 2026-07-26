@@ -131,7 +131,8 @@ def walk_forward_predict(
     return result
 
 
-def _spy_dataset(close: pd.Series) -> tuple[pd.DataFrame, pd.Series, pd.Series]:
+def build_spy_dataset(close: pd.Series) -> tuple[pd.DataFrame, pd.Series, pd.Series]:
+    """Return model features, next-day target, and aligned next-day returns."""
     dataset = build_dataset(close)
     features = dataset.drop(columns="target")
     target = dataset["target"].astype(int)
@@ -195,6 +196,7 @@ def run_spy_walk_forward(
     threshold: float = 0.55,
     exit_threshold: float | None = None,
     cost_bps: float = 5.0,
+    feature_columns: tuple[str, ...] | None = None,
     out_dir: str | Path | None = "results",
 ) -> WalkForwardResult:
     """Run and optionally save the complete inspectable SPY experiment."""
@@ -202,7 +204,14 @@ def run_spy_walk_forward(
     if close.index.has_duplicates:
         raise ValueError("close index must contain unique dates")
     probabilities_to_positions(pd.Series(dtype=float), threshold, exit_threshold)
-    X, target, forward_return = _spy_dataset(close)
+    X, target, forward_return = build_spy_dataset(close)
+    if feature_columns is not None:
+        missing = sorted(set(feature_columns) - set(X.columns))
+        if missing:
+            raise ValueError(f"unknown feature columns: {', '.join(missing)}")
+        if not feature_columns:
+            raise ValueError("at least one feature column is required")
+        X = X.loc[:, list(feature_columns)]
 
     if model_factory is None:
         try:

@@ -56,10 +56,45 @@ from staying invested for long stretches, as its high recall and low number of
 position changes make clear. Gradient boosting trades much more frequently
 without improving risk-adjusted performance.
 
+### Feature importance and ablation
+
+Permutation importance is calculated only on each unseen test fold. A feature
+is shuffled within that fold, never in the training data, and its decrease in
+ROC-AUC is averaged over 10 folds and five deterministic repeats.
+
+| Model | Highest-ranked feature | Mean ROC-AUC decrease | Standard deviation |
+| --- | --- | ---: | ---: |
+| Logistic regression | 5-day return | 0.0227 | 0.0348 |
+| Gradient boosting | 5-day return | 0.0069 | 0.0159 |
+
+![Permutation importance](results/permutation_importance.png)
+
+The uncertainty is larger than the mean importance for every feature, so these
+rankings are not evidence of stable standalone predictors. The strongest
+shared candidate is the 5-day return, while several moving-average and
+volatility features have near-zero or negative permutation importance.
+
+Leave-one-feature-out ablation reruns the complete walk-forward experiment
+after removing each feature:
+
+![Feature ablation](results/feature_ablation.png)
+
+- Removing 1-day or 5-day returns reduces logistic ROC-AUC by about 0.009.
+- Removing the 5-day return reduces gradient-boosting ROC-AUC by about 0.010.
+- Removing some moving-average features slightly improves gradient boosting,
+  suggesting redundancy or noise rather than independent signal.
+- Changes in Sharpe can be much larger than changes in ROC-AUC because a small
+  probability shift can alter entry and exit timing. They should not be treated
+  as evidence for feature selection without another untouched test period.
+
 The experiment writes:
 
 ```text
 results/
+├── feature_ablation.csv
+├── feature_ablation.png
+├── permutation_importance.csv
+├── permutation_importance.png
 ├── metrics.csv
 ├── model_comparison.csv
 ├── model_comparison.png
@@ -155,6 +190,17 @@ quantbot walk-forward \
   --model gradient-boosting \
   --threshold 0.55 \
   --exit-threshold 0.45
+```
+
+Run out-of-sample permutation importance and feature ablation:
+
+```bash
+quantbot analyze-features \
+  --model all \
+  --start 2010-01-01 \
+  --end 2024-12-31 \
+  --repeats 5 \
+  --out results
 ```
 
 Run the cross-sectional momentum backtest:
