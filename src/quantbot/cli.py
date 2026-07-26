@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from .analysis import run_feature_analysis
 from .backtest.engine import run_backtest
 from .data.loader import load_prices
 from .models import MODEL_NAMES, get_model_factory
@@ -117,6 +118,40 @@ def _compare_models(args: argparse.Namespace) -> int:
     return 0
 
 
+def _analyze_features(args: argparse.Namespace) -> int:
+    cache_dir = Path(args.cache_dir) if args.cache_dir else None
+    prices = load_prices(["SPY"], start=args.start, end=args.end, cache_dir=cache_dir)
+    models = MODEL_NAMES if args.model == "all" else (args.model,)
+    result = run_feature_analysis(
+        prices["SPY"],
+        models=models,
+        min_train_years=args.min_train_years,
+        test_years=args.test_years,
+        entry_threshold=args.entry_threshold,
+        exit_threshold=args.exit_threshold,
+        cost_bps=args.cost_bps,
+        n_repeats=args.repeats,
+        random_state=args.random_state,
+        out_dir=args.out,
+    )
+    print("\nPermutation importance")
+    print(
+        result.permutation_importance.to_string(
+            index=False,
+            float_format=lambda value: f"{value:,.4f}",
+        )
+    )
+    print("\nFeature ablation")
+    print(
+        result.ablation.to_string(
+            index=False,
+            float_format=lambda value: f"{value:,.4f}",
+        )
+    )
+    print(f"\nFeature analysis written to {args.out}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="quantbot", description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -166,6 +201,24 @@ def main(argv: list[str] | None = None) -> int:
     compare.add_argument("--cache-dir", default=None, help="optional price-cache directory")
     compare.add_argument("--out", default="results")
     compare.set_defaults(func=_compare_models)
+
+    analysis = sub.add_parser(
+        "analyze-features",
+        help="run fold-safe permutation importance and feature ablation",
+    )
+    analysis.add_argument("--start", default="2010-01-01")
+    analysis.add_argument("--end", default="2024-12-31")
+    analysis.add_argument("--model", choices=(*MODEL_NAMES, "all"), default="all")
+    analysis.add_argument("--min-train-years", type=int, default=5)
+    analysis.add_argument("--test-years", type=int, default=1)
+    analysis.add_argument("--entry-threshold", type=float, default=0.55)
+    analysis.add_argument("--exit-threshold", type=float, default=0.45)
+    analysis.add_argument("--cost-bps", type=float, default=5.0)
+    analysis.add_argument("--repeats", type=int, default=5)
+    analysis.add_argument("--random-state", type=int, default=42)
+    analysis.add_argument("--cache-dir", default=None, help="optional price-cache directory")
+    analysis.add_argument("--out", default="results")
+    analysis.set_defaults(func=_analyze_features)
 
     args = parser.parse_args(argv)
     return args.func(args)
