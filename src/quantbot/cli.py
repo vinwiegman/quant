@@ -13,8 +13,9 @@ import pandas as pd
 
 from .backtest.engine import run_backtest
 from .data.loader import load_prices
+from .models import MODEL_NAMES, get_model_factory
 from .signals.momentum import CrossSectionalMomentum
-from .validation.walk_forward import run_spy_walk_forward
+from .validation import run_model_comparison, run_spy_walk_forward
 
 DEFAULT_TICKERS = "AAPL,MSFT,NVDA,AMZN,JPM,XOM,PG,JNJ,KO,CAT"
 
@@ -86,14 +87,33 @@ def _walk_forward(args: argparse.Namespace) -> int:
     prices = load_prices(["SPY"], start=args.start, end=args.end, cache_dir=cache_dir)
     result = run_spy_walk_forward(
         prices["SPY"],
+        model_factory=get_model_factory(args.model),
         min_train_years=args.min_train_years,
         test_years=args.test_years,
         threshold=args.threshold,
+        exit_threshold=args.exit_threshold,
         cost_bps=args.cost_bps,
         out_dir=args.out,
     )
     print(result.metrics.to_string(float_format=lambda value: f"{value:,.4f}"))
     print(f"\nResults written to {args.out}")
+    return 0
+
+
+def _compare_models(args: argparse.Namespace) -> int:
+    cache_dir = Path(args.cache_dir) if args.cache_dir else None
+    prices = load_prices(["SPY"], start=args.start, end=args.end, cache_dir=cache_dir)
+    result = run_model_comparison(
+        prices["SPY"],
+        min_train_years=args.min_train_years,
+        test_years=args.test_years,
+        entry_threshold=args.entry_threshold,
+        exit_threshold=args.exit_threshold,
+        cost_bps=args.cost_bps,
+        out_dir=args.out,
+    )
+    print(result.metrics.to_string(float_format=lambda value: f"{value:,.4f}"))
+    print(f"\nComparison written to {args.out}")
     return 0
 
 
@@ -119,11 +139,33 @@ def main(argv: list[str] | None = None) -> int:
     wf.add_argument("--end", default="2024-12-31")
     wf.add_argument("--min-train-years", type=int, default=5)
     wf.add_argument("--test-years", type=int, default=1)
+    wf.add_argument("--model", choices=MODEL_NAMES, default="logistic")
     wf.add_argument("--threshold", type=float, default=0.55)
+    wf.add_argument(
+        "--exit-threshold",
+        type=float,
+        default=None,
+        help="optional lower threshold that enables long/cash hysteresis",
+    )
     wf.add_argument("--cost-bps", type=float, default=5.0)
     wf.add_argument("--cache-dir", default=None, help="optional price-cache directory")
     wf.add_argument("--out", default="results")
     wf.set_defaults(func=_walk_forward)
+
+    compare = sub.add_parser(
+        "compare-models",
+        help="compare logistic and gradient boosting on identical SPY folds",
+    )
+    compare.add_argument("--start", default="2010-01-01")
+    compare.add_argument("--end", default="2024-12-31")
+    compare.add_argument("--min-train-years", type=int, default=5)
+    compare.add_argument("--test-years", type=int, default=1)
+    compare.add_argument("--entry-threshold", type=float, default=0.55)
+    compare.add_argument("--exit-threshold", type=float, default=0.45)
+    compare.add_argument("--cost-bps", type=float, default=5.0)
+    compare.add_argument("--cache-dir", default=None, help="optional price-cache directory")
+    compare.add_argument("--out", default="results")
+    compare.set_defaults(func=_compare_models)
 
     args = parser.parse_args(argv)
     return args.func(args)
