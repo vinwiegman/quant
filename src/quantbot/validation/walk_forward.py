@@ -40,6 +40,35 @@ class WalkForwardResult:
     metrics: pd.DataFrame
 
 
+def probabilities_to_positions(
+    probability: pd.Series,
+    entry_threshold: float = 0.55,
+    exit_threshold: float | None = None,
+) -> pd.Series:
+    """Convert probabilities to long/cash positions.
+
+    With an exit threshold, probabilities in the neutral band preserve the
+    previous position. This hysteresis prevents repeated trades caused by
+    probabilities oscillating around one decision boundary.
+    """
+    if not 0.0 <= entry_threshold <= 1.0:
+        raise ValueError("entry threshold must be between zero and one")
+    if exit_threshold is None:
+        return (probability >= entry_threshold).astype(float).rename("position")
+    if not 0.0 <= exit_threshold < entry_threshold:
+        raise ValueError("exit threshold must be between zero and the entry threshold")
+
+    current = 0.0
+    positions: list[float] = []
+    for value in probability:
+        if value >= entry_threshold:
+            current = 1.0
+        elif value <= exit_threshold:
+            current = 0.0
+        positions.append(current)
+    return pd.Series(positions, index=probability.index, name="position")
+
+
 def chronological_folds(
     index: pd.DatetimeIndex,
     min_train_years: int = 5,
@@ -129,12 +158,42 @@ def _metric_row(
     }
 
 
+def _classification_metrics(target: pd.Series, probability: pd.Series) -> dict[str, float]:
+    predicted = probability.ge(0.5).astype(int)
+    positive = target.eq(1)
+    predicted_positive = predicted.eq(1)
+    true_positive = int((positive & predicted_positive).sum())
+    false_positive = int((~positive & predicted_positive).sum())
+    false_negative = int((positive & ~predicted_positive).sum())
+    n_positive = int(positive.sum())
+    n_negative = len(target) - n_positive
+
+    precision_denominator = true_positive + false_positive
+    recall_denominator = true_positive + false_negative
+    ranks = probability.rank(method="average")
+    auc = (
+        (float(ranks[positive].sum()) - n_positive * (n_positive + 1) / 2)
+        / (n_positive * n_negative)
+        if n_positive and n_negative
+        else float("nan")
+    )
+    return {
+        "Accuracy": float((predicted == target).mean()),
+        "Precision": (
+            true_positive / precision_denominator if precision_denominator else float("nan")
+        ),
+        "Recall": true_positive / recall_denominator if recall_denominator else float("nan"),
+        "ROC AUC": auc,
+    }
+
+
 def run_spy_walk_forward(
     close: pd.Series,
     model_factory: Callable[[], ProbabilisticClassifier] | None = None,
     min_train_years: int = 5,
     test_years: int = 1,
     threshold: float = 0.55,
+    exit_threshold: float | None = None,
     cost_bps: float = 5.0,
     out_dir: str | Path | None = "results",
 ) -> WalkForwardResult:
@@ -142,22 +201,17 @@ def run_spy_walk_forward(
     close = close.dropna().sort_index().rename("close")
     if close.index.has_duplicates:
         raise ValueError("close index must contain unique dates")
-    if not 0.0 <= threshold <= 1.0:
-        raise ValueError("threshold must be between zero and one")
+    probabilities_to_positions(pd.Series(dtype=float), threshold, exit_threshold)
     X, target, forward_return = _spy_dataset(close)
 
     if model_factory is None:
         try:
-            from sklearn.linear_model import LogisticRegression
-            from sklearn.pipeline import make_pipeline
-            from sklearn.preprocessing import StandardScaler
+            from quantbot.models import get_model_factory
         except ImportError as exc:
             raise ImportError(
                 "install quantbot with the 'ml' extra to run this experiment"
             ) from exc
-
-        def model_factory() -> ProbabilisticClassifier:
-            return make_pipeline(StandardScaler(), LogisticRegression(max_iter=1_000))
+        model_factory = get_model_factory("logistic")
 
     probability = walk_forward_predict(
         X, target, model_factory, min_train_years=min_train_years, test_years=test_years
@@ -165,7 +219,7 @@ def run_spy_walk_forward(
     if probability.empty:
         raise ValueError("not enough history to create a walk-forward test fold")
 
-    position = (probability >= threshold).astype(float).rename("position")
+    position = probabilities_to_positions(probability, threshold, exit_threshold)
     evaluation_dates = probability.index
 
     # A prediction made at date t becomes the engine's held position at t+1.
@@ -191,9 +245,11 @@ def run_spy_walk_forward(
     strategy_turnover = backtest.turnover.reindex(realized_dates)
     strategy_turnover.index = evaluation_dates
     benchmarks = {"SPY buy and hold": buy_hold, "SPY above 50-day MA": ma_returns}
+    strategy_metrics = _metric_row(strategy_returns, position, strategy_turnover)
+    strategy_metrics.update(_classification_metrics(target.reindex(evaluation_dates), probability))
     metrics = pd.DataFrame(
         {
-            "Walk-forward strategy": _metric_row(strategy_returns, position, strategy_turnover),
+            "Walk-forward strategy": strategy_metrics,
             "SPY buy and hold": _metric_row(
                 buy_hold,
                 pd.Series(1.0, index=evaluation_dates),

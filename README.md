@@ -35,11 +35,36 @@ out-of-sample result; the validation and reporting infrastructure is the
 deliverable, not a tuned winning backtest. Its high turnover also shows that a
 probability threshold alone is not yet a practical execution policy.
 
+### Model comparison
+
+Logistic regression and histogram gradient boosting are evaluated on exactly
+the same features and expanding-window folds. Both use a fixed 0.55 entry and
+0.45 exit policy: probabilities in between keep the previous position. These
+thresholds were specified before the comparison rather than tuned on the test
+period.
+
+| Model | Accuracy | Precision | Recall | ROC AUC | CAGR | Sharpe | Max drawdown | Position changes | Annual turnover |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Logistic regression | 54.26% | 54.72% | 94.96% | 0.491 | 12.22% | 0.75 | -30.39% | 20 | 2.15x |
+| Gradient boosting | 53.65% | 55.85% | 72.87% | 0.516 | 7.67% | 0.54 | -30.86% | 375 | 38.32x |
+
+![Model comparison](results/model_comparison.png)
+
+The comparison does not show a strong predictive edge: both ROC-AUC values are
+close to random ranking. Logistic regression's trading result mainly comes
+from staying invested for long stretches, as its high recall and low number of
+position changes make clear. Gradient boosting trades much more frequently
+without improving risk-adjusted performance.
+
 The experiment writes:
 
 ```text
 results/
 ├── metrics.csv
+├── model_comparison.csv
+├── model_comparison.png
+├── logistic_predictions.csv
+├── gradient_boosting_predictions.csv
 ├── predictions.csv
 └── performance.png
 ```
@@ -110,6 +135,26 @@ quantbot walk-forward \
   --min-train-years 5 \
   --test-years 1 \
   --out results
+```
+
+Compare both ML models under identical evaluation conditions:
+
+```bash
+quantbot compare-models \
+  --start 2010-01-01 \
+  --end 2024-12-31 \
+  --entry-threshold 0.55 \
+  --exit-threshold 0.45 \
+  --out results
+```
+
+Evaluate one model or enable hysteresis explicitly:
+
+```bash
+quantbot walk-forward \
+  --model gradient-boosting \
+  --threshold 0.55 \
+  --exit-threshold 0.45
 ```
 
 Run the cross-sectional momentum backtest:
