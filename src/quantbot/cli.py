@@ -6,14 +6,19 @@ quantbot backtest --tickers AAPL,MSFT,NVDA,JPM,XOM,PG --start 2018-01-01
 from __future__ import annotations
 
 import argparse
+import json
 import sys
+from dataclasses import asdict
+from datetime import date, timedelta
 from pathlib import Path
 
 import pandas as pd
 
 from .analysis import run_feature_analysis
 from .backtest.engine import run_backtest
+from .broker import AlpacaPaperBroker
 from .data.loader import load_ohlcv, load_prices
+from .execution import run_daily_execution
 from .models import MODEL_NAMES, get_model_factory
 from .signals.momentum import CrossSectionalMomentum
 from .validation import run_model_comparison, run_spy_walk_forward
@@ -155,6 +160,34 @@ def _analyze_features(args: argparse.Namespace) -> int:
     return 0
 
 
+def _trade(args: argparse.Namespace) -> int:
+    end = args.end or (date.today() + timedelta(days=1)).isoformat()
+    cache_dir = Path(args.cache_dir) if args.cache_dir else None
+    market = load_ohlcv(
+        "SPY",
+        start=args.start,
+        end=end,
+        cache_dir=cache_dir,
+        force_refresh=args.force_refresh,
+    )
+    broker = AlpacaPaperBroker()
+    result = run_daily_execution(
+        market,
+        broker,
+        model=args.model,
+        entry_threshold=args.entry_threshold,
+        exit_threshold=args.exit_threshold,
+        invested_weight=args.invested_weight,
+        min_trade_value=args.min_trade_value,
+        submit=args.submit,
+        log_path=args.log,
+    )
+    print(json.dumps(asdict(result), indent=2))
+    if not args.submit:
+        print("\nDRY RUN: no order was submitted. Add --submit for Alpaca paper execution.")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="quantbot", description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -222,6 +255,27 @@ def main(argv: list[str] | None = None) -> int:
     analysis.add_argument("--cache-dir", default=None, help="optional price-cache directory")
     analysis.add_argument("--out", default="results")
     analysis.set_defaults(func=_analyze_features)
+
+    trade = sub.add_parser(
+        "trade",
+        help="generate and optionally submit one SPY Alpaca paper decision",
+    )
+    trade.add_argument("--start", default="2010-01-01")
+    trade.add_argument("--end", default=None, help="exclusive data end date; defaults to tomorrow")
+    trade.add_argument("--model", choices=MODEL_NAMES, default="logistic")
+    trade.add_argument("--entry-threshold", type=float, default=0.55)
+    trade.add_argument("--exit-threshold", type=float, default=0.45)
+    trade.add_argument("--invested-weight", type=float, default=0.95)
+    trade.add_argument("--min-trade-value", type=float, default=25.0)
+    trade.add_argument("--cache-dir", default=None)
+    trade.add_argument("--force-refresh", action="store_true")
+    trade.add_argument("--log", default="logs/executions.jsonl")
+    trade.add_argument(
+        "--submit",
+        action="store_true",
+        help="submit to Alpaca paper trading; omitted means read-only dry run",
+    )
+    trade.set_defaults(func=_trade)
 
     args = parser.parse_args(argv)
     return args.func(args)
