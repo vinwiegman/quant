@@ -208,6 +208,59 @@ quantbot analyze-features \
   --out results
 ```
 
+## Alpaca paper execution
+
+The execution adapter is hard-coded to Alpaca paper mode. Use `.env.example`
+as a reference and set the two values in your shell. For PowerShell:
+
+```powershell
+$env:ALPACA_API_KEY="your-paper-api-key"
+$env:ALPACA_SECRET_KEY="your-paper-secret-key"
+```
+
+For Bash:
+
+```bash
+export ALPACA_API_KEY="your-paper-api-key"
+export ALPACA_SECRET_KEY="your-paper-secret-key"
+```
+
+Install the live integration:
+
+```bash
+pip install -e ".[ml,live]"
+```
+
+Generate today's signal, inspect the paper account, and print the proposed
+reconciliation without submitting an order:
+
+```bash
+quantbot trade --force-refresh
+```
+
+Only after reviewing that output, explicitly submit to the paper account:
+
+```bash
+quantbot trade --force-refresh --submit
+```
+
+Safety properties:
+
+- There is no live-account constructor or CLI flag.
+- Dry run is the default.
+- The strategy refuses to operate if the account holds symbols outside SPY.
+- The invested target defaults to 95%, leaving a cash buffer for fill movement.
+- Market orders use deterministic daily client-order IDs so an accidental
+  rerun is rejected as a duplicate by the broker.
+- Every decision is appended to `logs/executions.jsonl`; credentials are never
+  written to the log.
+
+The command trains the selected model on all labeled historical rows, predicts
+the latest complete OHLCV feature row, applies the fixed 0.55/0.45 hysteresis
+policy, and translates the target weight into the required fractional-share
+order. A paper fill still does not model live latency, queue position, market
+impact, or regulatory fees.
+
 Run the cross-sectional momentum backtest:
 
 ```bash
