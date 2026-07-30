@@ -60,7 +60,20 @@ class AlpacaPaperBroker(Broker):
         day = datetime.now(UTC).strftime("%Y%m%d")
         client_order_id = f"quantbot-{order.symbol.lower()}-{day}-{side}"
         request = self._request_factory(order, client_order_id)
-        self.last_response = self._client.submit_order(order_data=request)
+        try:
+            self.last_response = self._client.submit_order(order_data=request)
+        except Exception as exc:  # noqa: BLE001 - narrowed by _is_duplicate_order below
+            if _is_duplicate_order(exc):
+                # The deterministic client_order_id already exists for today, so this
+                # side was submitted earlier. Treat the duplicate as an idempotent no-op.
+                self.last_response = None
+                return
+            raise
+
+
+def _is_duplicate_order(exc: Exception) -> bool:
+    """Detect Alpaca's 'client_order_id must be unique' rejection (code 40010001)."""
+    return "client_order_id must be unique" in str(exc) or "40010001" in str(exc)
 
 
 def _market_order_request(order: Order, client_order_id: str) -> Any:

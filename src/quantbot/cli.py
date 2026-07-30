@@ -160,7 +160,17 @@ def _analyze_features(args: argparse.Namespace) -> int:
     return 0
 
 
+def _load_dotenv() -> None:
+    """Load Alpaca credentials from a local .env if python-dotenv is available."""
+    try:
+        from dotenv import load_dotenv
+    except ImportError:
+        return
+    load_dotenv()
+
+
 def _trade(args: argparse.Namespace) -> int:
+    _load_dotenv()
     end = args.end or (date.today() + timedelta(days=1)).isoformat()
     cache_dir = Path(args.cache_dir) if args.cache_dir else None
     market = load_ohlcv(

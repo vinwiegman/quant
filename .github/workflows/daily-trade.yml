@@ -1,0 +1,53 @@
+name: Daily paper trade
+
+# Runs the SPY Alpaca paper-trading decision on GitHub's servers so it fires
+# even when no local machine is on. Credentials come from repository secrets
+# (Settings -> Secrets and variables -> Actions):
+#   ALPACA_API_KEY, ALPACA_SECRET_KEY
+#
+# Scheduled cron is UTC and cannot follow US daylight-saving, so 14:35 UTC is
+# chosen because it lands after the 09:30 ET open in both EDT (10:35) and
+# EST (09:35). GitHub may delay scheduled runs under load; a daily rebalance
+# tolerates that. Scheduled runs only fire from the default branch (main).
+
+on:
+  schedule:
+    - cron: "35 14 * * 1-5" # Mon-Fri, 14:35 UTC
+  workflow_dispatch: # allow manual runs from the Actions tab (dry run by default)
+    inputs:
+      submit:
+        description: "Submit orders to Alpaca (otherwise dry run)"
+        type: boolean
+        default: false
+
+jobs:
+  trade:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install package
+        run: pip install -e ".[ml,live]"
+
+      - name: Run daily trade
+        env:
+          ALPACA_API_KEY: ${{ secrets.ALPACA_API_KEY }}
+          ALPACA_SECRET_KEY: ${{ secrets.ALPACA_SECRET_KEY }}
+        run: |
+          if [ "${{ github.event_name }}" = "schedule" ] || [ "${{ inputs.submit }}" = "true" ]; then
+            quantbot trade --submit
+          else
+            quantbot trade
+          fi
+
+      - name: Upload execution log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: execution-log
+          path: logs/executions.jsonl
+          if-no-files-found: ignore
