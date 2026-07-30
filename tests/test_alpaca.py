@@ -59,9 +59,7 @@ def test_alpaca_adapter_ignores_duplicate_client_order_id():
         def submit_order(self, *, order_data):
             raise RuntimeError('{"code":40010001,"message":"client_order_id must be unique"}')
 
-    broker = AlpacaPaperBroker(
-        client=DuplicateRejectingClient(), request_factory=lambda *_: {}
-    )
+    broker = AlpacaPaperBroker(client=DuplicateRejectingClient(), request_factory=lambda *_: {})
     # A duplicate deterministic id means today's order already exists: no-op, no raise.
     broker.submit(Order("SPY", 1.25), price=500.0)
     assert broker.last_response is None
