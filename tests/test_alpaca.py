@@ -54,6 +54,29 @@ def test_alpaca_adapter_submits_fractional_order_with_idempotency_key():
     assert len(client.submitted) == 1
 
 
+def test_alpaca_adapter_ignores_duplicate_client_order_id():
+    class DuplicateRejectingClient(FakeTradingClient):
+        def submit_order(self, *, order_data):
+            raise RuntimeError('{"code":40010001,"message":"client_order_id must be unique"}')
+
+    broker = AlpacaPaperBroker(
+        client=DuplicateRejectingClient(), request_factory=lambda *_: {}
+    )
+    # A duplicate deterministic id means today's order already exists: no-op, no raise.
+    broker.submit(Order("SPY", 1.25), price=500.0)
+    assert broker.last_response is None
+
+
+def test_alpaca_adapter_reraises_unexpected_submit_errors():
+    class FailingClient(FakeTradingClient):
+        def submit_order(self, *, order_data):
+            raise RuntimeError('{"code":40010000,"message":"insufficient buying power"}')
+
+    broker = AlpacaPaperBroker(client=FailingClient(), request_factory=lambda *_: {})
+    with pytest.raises(RuntimeError, match="insufficient buying power"):
+        broker.submit(Order("SPY", 1.25), price=500.0)
+
+
 def test_alpaca_adapter_requires_paper_credentials(monkeypatch):
     monkeypatch.delenv("ALPACA_API_KEY", raising=False)
     monkeypatch.delenv("ALPACA_SECRET_KEY", raising=False)
