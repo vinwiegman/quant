@@ -71,7 +71,7 @@ def _write_comparison(result: ModelComparisonResult, out_dir: Path) -> None:
 
     fig, axis = plt.subplots(figsize=(11, 5))
     for name, model_result in result.models.items():
-        equity = (1.0 + model_result.predictions["strategy_return"]).cumprod()
+        equity = (1.0 + model_result.predictions["net_strategy_return"]).cumprod()
         axis.plot(equity, label=name)
     axis.set_title("Out-of-sample ML strategy comparison")
     axis.set_ylabel("Growth of $1")
