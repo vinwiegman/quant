@@ -109,11 +109,22 @@ results/
 └── performance.png
 ```
 
-`predictions.csv` makes every decision inspectable with:
+`predictions.csv` is the canonical evidence artifact: every out-of-sample
+decision is one row, and the report numbers are derived from it rather than
+from in-memory state. Its columns let the walk-forward guarantees and the cost
+treatment be checked from the file alone:
 
 ```text
-date,close,target,probability,position,market_return,strategy_return
+date,close,fold_id,train_start,train_end,test_start,test_end,target,
+probability,position,market_return,gross_strategy_return,cost_bps,cost,
+net_strategy_return,benchmark_ma50_return
 ```
+
+`fold_id` and the four window boundaries make each row traceable to the exact
+train/test split that produced it, so `train_end < test_start` is verifiable
+without reading the code. Splitting `gross_strategy_return`, `cost`, and
+`net_strategy_return` makes the cost assumption explicit per row, with
+`gross - cost == net` holding by construction.
 
 ### Cross-sectional momentum
 
@@ -207,6 +218,38 @@ quantbot analyze-features \
   --repeats 5 \
   --out results
 ```
+
+## Data sources & reproducibility
+
+Every headline number is tied to the command that regenerates it, and the
+commands read from one documented source.
+
+**Source.** Prices are adjusted OHLCV bars from Yahoo Finance, pulled with
+`yfinance` in `data/loader.py` and cached to Parquet so a rerun does not refetch.
+`load_prices` supplies the cross-sectional universe; `load_ohlcv` supplies the
+single-symbol SPY series used by the walk-forward and trade paths.
+
+**Caveats.** Yahoo Finance is a public, unofficial interface: it can rate-limit
+or change without notice, and it is noticeably more likely to throttle requests
+from cloud or CI IP addresses than from a laptop. Yahoo also revises its
+adjusted history over time, so a reproduction run some months from now may
+differ slightly from the tables above even with identical commands. The bars are
+split- and dividend-adjusted, which is correct for return series but means
+`close` is not the untouched historical print.
+
+**Reproducing the results.** The walk-forward table and `results/predictions.csv`
+come from:
+
+```bash
+quantbot walk-forward --start 2010-01-01 --end 2024-12-31 --out results
+```
+
+The model-comparison and feature-analysis tables come from the `compare-models`
+and `analyze-features` commands shown above, with the same dates. Runs are
+deterministic given the same input bars: folds are calendar-based, and every
+estimator fixes `random_state`. Because `predictions.csv` carries the fold
+boundaries and the gross/cost/net split, the reported metrics can be
+recomputed from that file alone, without rerunning the models.
 
 ## Alpaca paper execution
 
