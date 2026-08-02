@@ -44,6 +44,21 @@ jobs:
             quantbot trade
           fi
 
+      - name: Generate dashboard
+        if: always() # produce a dashboard even if the trade step errored
+        env:
+          ALPACA_API_KEY: ${{ secrets.ALPACA_API_KEY }}
+          ALPACA_SECRET_KEY: ${{ secrets.ALPACA_SECRET_KEY }}
+        run: python scripts/dashboard.py
+
+      - name: Upload dashboard
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dashboard
+          path: results/dashboard.html
+          if-no-files-found: ignore
+
       - name: Upload execution log
         if: always()
         uses: actions/upload-artifact@v4
