@@ -95,6 +95,47 @@ def test_spy_dataset_adds_volume_features_when_volume_is_available():
     assert X.index.equals(forward_return.index)
 
 
+def test_predictions_artifact_carries_auditable_columns():
+    index = pd.date_range("2010-01-01", "2018-12-31", freq="B")
+    close = pd.Series(100.0 + np.arange(len(index)), index=index)
+
+    result = run_spy_walk_forward(close, RecordingModel, cost_bps=5.0, out_dir=None)
+    preds = result.predictions
+
+    required = {
+        "close",
+        "fold_id",
+        "train_start",
+        "train_end",
+        "test_start",
+        "test_end",
+        "target",
+        "probability",
+        "position",
+        "market_return",
+        "gross_strategy_return",
+        "cost_bps",
+        "cost",
+        "net_strategy_return",
+        "benchmark_ma50_return",
+    }
+    assert required <= set(preds.columns)
+
+    # Every prediction date appears exactly once.
+    assert preds.index.is_unique
+    # No fold trains on data at or after its own test window.
+    assert (preds["train_end"] < preds["test_start"]).all()
+    # The recorded cost assumption is what the run used.
+    assert (preds["cost_bps"] == 5.0).all()
+    assert (preds["fold_id"] >= 0).all()
+    # Net return is gross minus the realised cost, row by row.
+    np.testing.assert_allclose(
+        (preds["gross_strategy_return"] - preds["cost"]).to_numpy(),
+        preds["net_strategy_return"].to_numpy(),
+        atol=1e-12,
+    )
+
+
 def test_probability_threshold_must_be_valid():
     index = pd.date_range("2010-01-01", periods=120, freq="B")
     close = pd.Series(100.0 + np.arange(len(index)), index=index)

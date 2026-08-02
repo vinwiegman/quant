@@ -95,6 +95,38 @@ def chronological_folds(
         test_start = test_end
 
 
+def fold_metadata(
+    index: pd.DatetimeIndex,
+    min_train_years: int = 5,
+    test_years: int = 1,
+) -> pd.DataFrame:
+    """Per-test-date fold id and train/test window boundaries, for auditing.
+
+    Reuses :func:`chronological_folds`, so the boundaries reported here are the
+    exact windows the models were trained and evaluated on. Indexed by test date
+    with one row per prediction; enables verifying ``train_end < test_start`` and
+    which fold produced each row directly from ``predictions.csv``.
+    """
+    records: list[dict[str, object]] = []
+    for fold_id, (train_pos, test_pos) in enumerate(
+        chronological_folds(index, min_train_years=min_train_years, test_years=test_years)
+    ):
+        train_dates, test_dates = index[train_pos], index[test_pos]
+        for date in test_dates:
+            records.append(
+                {
+                    "date": date,
+                    "fold_id": fold_id,
+                    "train_start": train_dates.min(),
+                    "train_end": train_dates.max(),
+                    "test_start": test_dates.min(),
+                    "test_end": test_dates.max(),
+                }
+            )
+    frame = pd.DataFrame.from_records(records)
+    return frame if frame.empty else frame.set_index("date")
+
+
 def walk_forward_predict(
     X: pd.DataFrame,
     y: pd.Series,
@@ -242,11 +274,16 @@ def run_spy_walk_forward(
     backtest = run_backtest(engine_prices, target_weights, cost_bps=cost_bps)
 
     realized_dates = engine_prices.index[engine_prices.index.get_indexer(evaluation_dates) + 1]
-    strategy_forward = pd.Series(
-        backtest.returns.reindex(realized_dates).to_numpy(),
-        index=evaluation_dates,
-        name="strategy_return",
-    )
+
+    def _forward(series: pd.Series, name: str) -> pd.Series:
+        # A position held from t to t+1 realises the t+1 value, labelled at t.
+        return pd.Series(
+            series.reindex(realized_dates).to_numpy(), index=evaluation_dates, name=name
+        )
+
+    strategy_forward = _forward(backtest.returns, "net_strategy_return")
+    gross_strategy_forward = _forward(backtest.gross_returns, "gross_strategy_return")
+    cost_forward = _forward(backtest.costs, "cost")
     market_forward = forward_return.reindex(evaluation_dates)
 
     buy_hold = market_forward.rename("SPY buy and hold")
@@ -276,14 +313,20 @@ def run_spy_walk_forward(
         }
     ).T
 
+    folds = fold_metadata(X.index, min_train_years=min_train_years, test_years=test_years)
     predictions = pd.concat(
         [
-            close.reindex(evaluation_dates),
+            close.reindex(evaluation_dates).rename("close"),
+            folds.reindex(evaluation_dates),
             target.reindex(evaluation_dates),
             probability,
             position,
             market_forward,
+            gross_strategy_forward,
+            pd.Series(float(cost_bps), index=evaluation_dates, name="cost_bps"),
+            cost_forward,
             strategy_forward,
+            ma_returns.reindex(evaluation_dates).rename("benchmark_ma50_return"),
         ],
         axis=1,
     )
@@ -306,7 +349,7 @@ def _write_results(result: WalkForwardResult, out_dir: Path) -> None:
     result.predictions.to_csv(out_dir / "predictions.csv")
 
     curves = {
-        "Walk-forward strategy": (1.0 + result.predictions["strategy_return"]).cumprod(),
+        "Walk-forward strategy": (1.0 + result.predictions["net_strategy_return"]).cumprod(),
         **{name: (1.0 + returns).cumprod() for name, returns in result.benchmark_returns.items()},
     }
     fig, (top, bottom) = plt.subplots(
