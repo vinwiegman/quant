@@ -1,5 +1,9 @@
 # quantbot
 
+[![CI](https://github.com/vinwiegman/quant/actions/workflows/ci.yml/badge.svg)](https://github.com/vinwiegman/quant/actions/workflows/ci.yml)
+![Coverage](docs/coverage.svg)
+[![Python 3.11--3.13](https://img.shields.io/badge/python-3.11--3.13-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+
 A systematic trading research platform: research a signal, backtest it without
 lying to yourself, then run it against a paper account.
 
@@ -7,6 +11,8 @@ The point of this repo is not to get rich. It is to do the boring things
 correctly—no lookahead, honest transaction costs, and benchmarks you actually
 have to beat—because that is what separates a real backtest from a plot that
 goes up.
+
+![quantbot command-line demo](docs/demo.gif)
 
 ## Results
 
@@ -206,6 +212,33 @@ Install the development and machine-learning dependencies:
 ```bash
 pip install -e ".[dev,ml]"
 ```
+
+### Docker
+
+Build the complete research and paper-trading image:
+
+```bash
+docker build -t quantbot .
+docker run --rm quantbot --help
+```
+
+Persist reports and audit state with bind mounts; pass paper credentials at
+runtime rather than baking them into the image:
+
+```bash
+docker run --rm --env-file .env \
+  -v "$(pwd)/state:/workspace/state" \
+  -v "$(pwd)/results:/workspace/results" \
+  quantbot trade --force-refresh
+docker run --rm \
+  -v "$(pwd)/state:/workspace/state" \
+  -v "$(pwd)/results:/workspace/results" \
+  quantbot paper-report
+```
+
+The final image runs as an unprivileged user and contains the `ml` and `live`
+extras. CI builds it from scratch and smoke-tests both the CLI and writable
+report paths.
 
 ## Use
 
@@ -416,6 +449,21 @@ becomes a held position on *t+1*, and earns the next close-to-close return.
 
 ## Project design
 
+```mermaid
+flowchart LR
+    Data["Yahoo OHLCV<br/>Parquet cache"] --> Features["Point-in-time<br/>features + targets"]
+    Features --> Validation["Nested walk-forward<br/>validation"]
+    Validation --> Backtest["Cost-aware<br/>backtest"]
+    Backtest --> Reports["Metrics, uncertainty<br/>and model card"]
+    Features --> Decision["Daily model<br/>decision"]
+    Decision --> Broker["Paper-only<br/>Alpaca broker"]
+    Broker --> Store["Versioned SQLite<br/>audit history"]
+    Store --> Monitor["Dashboard +<br/>health report"]
+    CI["GitHub Actions<br/>CI + scheduler"] --> Validation
+    CI --> Decision
+    CI --> Store
+```
+
 ```text
 data/        adjusted OHLCV loading and reproducible Parquet caching
 signals/     Signal interface and portfolio-weight generation
@@ -425,6 +473,17 @@ broker/      paper broker and weight-to-order translation
 persistence.py  versioned SQLite decision and account snapshots
 reporting.py    credential-free durable-history monitoring report
 ```
+
+The README assets are reproducible rather than hand-edited:
+
+```bash
+pytest --cov=quantbot --cov-report=json
+python scripts/coverage_badge.py
+python scripts/build_demo_gif.py
+```
+
+CI enforces at least 80% coverage and verifies that `docs/coverage.svg` matches
+the measured result.
 
 Three decisions carry most of the weight:
 

@@ -8,6 +8,7 @@ build/
 
 .pytest_cache/
 .coverage
+coverage.json
 htmlcov/
 .ruff_cache/
 

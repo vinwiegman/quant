@@ -31,4 +31,25 @@ jobs:
         run: ruff format --check .
 
       - name: Test
-        run: pytest --cov=quantbot --cov-report=term-missing
+        run: pytest --cov=quantbot --cov-report=term-missing --cov-report=json --cov-fail-under=80
+
+      - name: Verify coverage badge
+        if: matrix.python-version == '3.12'
+        run: |
+          python scripts/coverage_badge.py
+          git diff --exit-code -- docs/coverage.svg
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build image
+        run: docker build --tag quantbot:ci .
+
+      - name: Smoke test CLI and writable report paths
+        run: |
+          docker run --rm quantbot:ci --help
+          docker run --rm quantbot:ci paper-report \
+            --database /workspace/state/smoke.sqlite3 \
+            --out /workspace/results/paper
