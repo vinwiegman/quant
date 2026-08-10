@@ -15,8 +15,11 @@ import os
 from datetime import UTC, datetime
 from pathlib import Path
 
+from quantbot.persistence import ExecutionStore
+
 PROJECT = Path(__file__).resolve().parent.parent
 LOG_PATH = PROJECT / "logs" / "executions.jsonl"
+DATABASE_PATH = PROJECT / "state" / "paper_trading.sqlite3"
 OUT_PATH = PROJECT / "results" / "dashboard.html"
 
 
@@ -62,6 +65,8 @@ def _fetch(client) -> dict:
 
 
 def _decisions() -> list[dict]:
+    if DATABASE_PATH.exists():
+        return ExecutionStore(DATABASE_PATH).decisions()
     if not LOG_PATH.exists():
         return []
     rows = []
@@ -161,7 +166,8 @@ def build_html(data: dict, decisions: list[dict]) -> str:
     equity = float(a.equity)
     last_equity = float(a.last_equity) if getattr(a, "last_equity", None) else equity
     day_pl = equity - last_equity
-    total_pl = equity - 100_000.0  # paper accounts start at 100k
+    baseline_equity = float(data.get("baseline_equity", equity))
+    total_pl = equity - baseline_equity
     day_cls = "pos" if day_pl >= 0 else "neg"
     tot_cls = "pos" if total_pl >= 0 else "neg"
     mo = data.get("market_open")
@@ -218,7 +224,7 @@ tr:last-child td {{ border-bottom:none; }}
     <div class="plrow">
       <span class="{day_cls}">Today {day_pl:+,.2f}</span>
       <span class="{tot_cls}">All-time {total_pl:+,.2f}</span>
-      <span class="muted">since $100,000.00 start</span>
+      <span class="muted">since durable tracking began</span>
     </div>
   </div>
 
@@ -260,6 +266,13 @@ def main() -> None:
     client = _client()
     data = _fetch(client)
     decisions = _decisions()
+    if DATABASE_PATH.exists():
+        history = ExecutionStore(DATABASE_PATH).equity_history()
+        if not history.empty:
+            data["equity_series"] = list(
+                zip(history["signal_date"], history["equity"], strict=True)
+            )
+            data["baseline_equity"] = float(history["equity"].iloc[0])
     OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     OUT_PATH.write_text(build_html(data, decisions), encoding="utf-8")
     print(f"Dashboard written to {OUT_PATH}")

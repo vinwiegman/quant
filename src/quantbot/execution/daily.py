@@ -9,14 +9,16 @@ from pathlib import Path
 
 import pandas as pd
 
-from quantbot.broker import Broker, Order, target_weights_to_orders
+from quantbot.broker import Broker, Order, Position, target_weights_to_orders
 from quantbot.features import build_dataset, make_features
 from quantbot.models import ModelName, get_model_factory
+from quantbot.persistence import ExecutionStore
 
 
 @dataclass(frozen=True)
 class DailyExecutionResult:
     timestamp: str
+    signal_date: str
     symbol: str
     model: str
     probability: float
@@ -26,6 +28,9 @@ class DailyExecutionResult:
     market_is_open: bool | None
     orders: tuple[dict[str, float | str], ...]
     submitted: bool
+    account_equity: float
+    cash: float
+    positions: tuple[dict[str, float | str], ...]
 
 
 def run_daily_execution(
@@ -40,6 +45,7 @@ def run_daily_execution(
     min_trade_value: float = 25.0,
     submit: bool = False,
     log_path: str | Path | None = "logs/executions.jsonl",
+    database_path: str | Path | None = None,
 ) -> DailyExecutionResult:
     """Build and optionally submit one idempotent daily paper-trading decision."""
     if not 0.0 < invested_weight <= 1.0:
@@ -77,9 +83,17 @@ def run_daily_execution(
         target_weight = invested_weight if current_invested else 0.0
 
     latest_price = float(close.iloc[-1])
+    cash = float(broker.cash())
     equity_method = getattr(broker, "account_equity", None)
     equity = (
-        float(equity_method()) if callable(equity_method) else broker.equity({symbol: latest_price})
+        float(equity_method())
+        if callable(equity_method)
+        else cash
+        + sum(
+            position.market_value(latest_price)
+            for held_symbol, position in positions.items()
+            if held_symbol == symbol
+        )
     )
     orders = target_weights_to_orders(
         {symbol: target_weight},
@@ -96,6 +110,7 @@ def run_daily_execution(
     market_is_open = bool(clock_method()) if callable(clock_method) else None
     result = DailyExecutionResult(
         timestamp=datetime.now(UTC).isoformat(),
+        signal_date=pd.Timestamp(close.index[-1]).date().isoformat(),
         symbol=symbol,
         model=model,
         probability=probability,
@@ -105,9 +120,14 @@ def run_daily_execution(
         market_is_open=market_is_open,
         orders=tuple(_order_record(order) for order in orders),
         submitted=submit and bool(orders),
+        account_equity=equity,
+        cash=cash,
+        positions=tuple(_position_record(position) for position in positions.values()),
     )
     if log_path is not None:
         _append_log(result, Path(log_path))
+    if database_path is not None:
+        ExecutionStore(database_path).record(result)
     return result
 
 
@@ -116,6 +136,14 @@ def _order_record(order: Order) -> dict[str, float | str]:
         "symbol": order.symbol,
         "quantity": order.quantity,
         "side": "buy" if order.quantity > 0 else "sell",
+    }
+
+
+def _position_record(position: Position) -> dict[str, float | str]:
+    return {
+        "symbol": position.symbol,
+        "quantity": position.quantity,
+        "avg_price": position.avg_price,
     }
 
 

@@ -337,14 +337,44 @@ Safety properties:
 - The invested target defaults to 95%, leaving a cash buffer for fill movement.
 - Market orders use deterministic daily client-order IDs so an accidental
   rerun is rejected as a duplicate by the broker.
-- Every decision is appended to `logs/executions.jsonl`; credentials are never
-  written to the log.
+- Every decision is appended to `logs/executions.jsonl` and idempotently stored
+  in `state/paper_trading.sqlite3`; credentials are never written to either.
 
 The command trains the selected model on all labeled historical rows, predicts
 the latest complete OHLCV feature row, applies the fixed 0.55/0.45 hysteresis
 policy, and translates the target weight into the required fractional-share
 order. A paper fill still does not model live latency, queue position, market
 impact, or regulatory fees.
+
+### Durable paper history and monitoring
+
+Each `quantbot trade` run records the decision, proposed orders, observed
+positions, cash, and account equity in a versioned SQLite database. The unique
+key is the signal date, symbol, and model, so rerunning the same daily decision
+updates one record instead of inventing duplicate history. A successful submit
+cannot be downgraded to a dry run by a later retry.
+
+Generate an offline report without Alpaca credentials:
+
+```bash
+quantbot paper-report \
+  --database state/paper_trading.sqlite3 \
+  --out results/paper
+```
+
+The report exports a self-contained HTML monitoring page, equity history,
+latest positions, a JSON backup, and machine-readable health summary. Health
+is `empty`, `healthy`, `stale`, or `inconsistent`, based on recency and database
+coherence rather than whether the strategy made money. The cloud workflow uses
+`--fail-on-unhealthy` so GitHub Actions visibly alerts on missing, stale, or
+inconsistent state.
+
+The scheduled GitHub workflow serializes runs, restores the newest database
+from an Actions cache, saves the updated database under a new immutable cache
+key, and uploads both SQLite and JSONL audit files for recovery. GitHub caches
+and artifacts are retention-limited backups, not permanent regulated storage;
+for a real deployment the same `ExecutionStore` interface should point to a
+managed database or object store with explicit retention guarantees.
 
 Run the cross-sectional momentum backtest:
 
@@ -392,6 +422,8 @@ signals/     Signal interface and portfolio-weight generation
 validation/  expanding-window model evaluation and reporting
 backtest/    vectorized, cost-aware engine and metrics
 broker/      paper broker and weight-to-order translation
+persistence.py  versioned SQLite decision and account snapshots
+reporting.py    credential-free durable-history monitoring report
 ```
 
 Three decisions carry most of the weight:

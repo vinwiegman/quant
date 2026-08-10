@@ -20,9 +20,11 @@ docs/*.csv
 
 .env
 logs/
+state/
 .DS_Store
 .idea/
 .vscode/
 
 # Generated dashboard (contains live account snapshot)
 results/dashboard.html
+results/paper/

@@ -69,8 +69,30 @@ def test_daily_execution_is_dry_run_by_default(monkeypatch, tmp_path):
     assert result.target_weight == pytest.approx(0.95)
     assert result.orders[0]["side"] == "buy"
     assert result.submitted is False
+    assert result.signal_date == market_data().index[-1].date().isoformat()
+    assert result.account_equity == pytest.approx(10_000.0)
+    assert result.cash == pytest.approx(10_000.0)
     assert broker.submitted == []
     assert json.loads(log.read_text())["probability"] == pytest.approx(0.60)
+
+
+def test_daily_execution_persists_to_sqlite(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        "quantbot.execution.daily.get_model_factory",
+        lambda name: lambda: FixedProbabilityModel(0.60),
+    )
+    database = tmp_path / "paper.sqlite3"
+
+    run_daily_execution(
+        market_data(),
+        RecordingBroker(),
+        log_path=None,
+        database_path=database,
+    )
+
+    from quantbot.persistence import ExecutionStore
+
+    assert len(ExecutionStore(database).decisions()) == 1
 
 
 def test_daily_execution_submits_only_when_explicit(monkeypatch):

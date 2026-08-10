@@ -20,6 +20,8 @@ from .broker import AlpacaPaperBroker
 from .data.loader import load_ohlcv, load_prices
 from .execution import run_daily_execution
 from .models import MODEL_NAMES, get_model_factory
+from .persistence import ExecutionStore
+from .reporting import write_paper_report
 from .signals.momentum import CrossSectionalMomentum
 from .validation import run_model_comparison, run_robustness_analysis, run_spy_walk_forward
 
@@ -214,10 +216,26 @@ def _trade(args: argparse.Namespace) -> int:
         min_trade_value=args.min_trade_value,
         submit=args.submit,
         log_path=args.log,
+        database_path=args.database,
     )
     print(json.dumps(asdict(result), indent=2))
     if not args.submit:
         print("\nDRY RUN: no order was submitted. Add --submit for Alpaca paper execution.")
+    return 0
+
+
+def _paper_report(args: argparse.Namespace) -> int:
+    store = ExecutionStore(args.database)
+    summary = write_paper_report(
+        store,
+        args.out,
+        stale_after_hours=args.stale_after_hours,
+    )
+    print(json.dumps(summary, indent=2))
+    print(f"\nPaper history report written to {args.out}")
+    if args.fail_on_unhealthy and summary["status"] != "healthy":
+        print(f"Paper-history health check failed: {summary['status']}", file=sys.stderr)
+        return 1
     return 0
 
 
@@ -320,12 +338,23 @@ def main(argv: list[str] | None = None) -> int:
     trade.add_argument("--cache-dir", default=None)
     trade.add_argument("--force-refresh", action="store_true")
     trade.add_argument("--log", default="logs/executions.jsonl")
+    trade.add_argument("--database", default="state/paper_trading.sqlite3")
     trade.add_argument(
         "--submit",
         action="store_true",
         help="submit to Alpaca paper trading; omitted means read-only dry run",
     )
     trade.set_defaults(func=_trade)
+
+    paper_report = sub.add_parser(
+        "paper-report",
+        help="generate an offline monitoring report from durable paper history",
+    )
+    paper_report.add_argument("--database", default="state/paper_trading.sqlite3")
+    paper_report.add_argument("--out", default="results/paper")
+    paper_report.add_argument("--stale-after-hours", type=float, default=48.0)
+    paper_report.add_argument("--fail-on-unhealthy", action="store_true")
+    paper_report.set_defaults(func=_paper_report)
 
     args = parser.parse_args(argv)
     return args.func(args)

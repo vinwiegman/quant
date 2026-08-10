@@ -20,11 +20,26 @@ on:
         type: boolean
         default: false
 
+permissions:
+  contents: read
+
+concurrency:
+  group: paper-trading-state
+  cancel-in-progress: false
+
 jobs:
   trade:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Restore durable paper history
+        uses: actions/cache/restore@v4
+        with:
+          path: state/paper_trading.sqlite3
+          key: paper-state-${{ github.run_id }}
+          restore-keys: |
+            paper-state-
 
       - uses: actions/setup-python@v5
         with:
@@ -51,18 +66,34 @@ jobs:
           ALPACA_SECRET_KEY: ${{ secrets.ALPACA_SECRET_KEY }}
         run: python scripts/dashboard.py
 
+      - name: Generate durable history report
+        if: always()
+        run: quantbot paper-report --fail-on-unhealthy
+
+      - name: Save durable paper history
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: state/paper_trading.sqlite3
+          key: paper-state-${{ github.run_id }}
+
       - name: Upload dashboard
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: dashboard
-          path: results/dashboard.html
+          path: |
+            results/dashboard.html
+            results/paper/
           if-no-files-found: ignore
 
-      - name: Upload execution log
+      - name: Upload audit backup
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: execution-log
-          path: logs/executions.jsonl
+          name: paper-audit-state
+          path: |
+            state/paper_trading.sqlite3
+            logs/executions.jsonl
           if-no-files-found: ignore
+          retention-days: 90
