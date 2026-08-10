@@ -288,7 +288,12 @@ def run_spy_walk_forward(
 
     buy_hold = market_forward.rename("SPY buy and hold")
     moving_average_position = (close > close.rolling(50).mean()).astype(float)
-    ma_returns = (moving_average_position * forward_return).reindex(evaluation_dates).fillna(0.0)
+    ma_gross_returns = (
+        (moving_average_position * forward_return).reindex(evaluation_dates).fillna(0.0)
+    )
+    ma_turnover = moving_average_position.diff().abs().reindex(evaluation_dates).fillna(0.0)
+    ma_costs = ma_turnover * (cost_bps / 10_000.0)
+    ma_returns = ma_gross_returns - ma_costs
     ma_returns.name = "SPY above 50-day MA"
     strategy_returns = strategy_forward.rename("Walk-forward strategy")
 
@@ -308,7 +313,7 @@ def run_spy_walk_forward(
             "SPY above 50-day MA": _metric_row(
                 ma_returns,
                 moving_average_position.reindex(evaluation_dates),
-                moving_average_position.diff().abs().reindex(evaluation_dates).fillna(0.0),
+                ma_turnover,
             ),
         }
     ).T
@@ -326,6 +331,9 @@ def run_spy_walk_forward(
             pd.Series(float(cost_bps), index=evaluation_dates, name="cost_bps"),
             cost_forward,
             strategy_forward,
+            moving_average_position.reindex(evaluation_dates).rename("benchmark_ma50_position"),
+            ma_gross_returns.rename("benchmark_ma50_gross_return"),
+            ma_costs.rename("benchmark_ma50_cost"),
             ma_returns.reindex(evaluation_dates).rename("benchmark_ma50_return"),
         ],
         axis=1,
