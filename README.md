@@ -57,6 +57,30 @@ from staying invested for long stretches, as its high recall and low number of
 position changes make clear. Gradient boosting trades much more frequently
 without improving risk-adjusted performance.
 
+### Robustness and nested ensemble
+
+The ML/momentum ensemble is evaluated with nested walk-forward validation.
+Inside every outer training fold, inner out-of-sample predictions choose the
+blend between logistic probability and point-in-time 20-day momentum. The
+outer test fold is used exactly once and never participates in tuning.
+
+| Portfolio | CAGR | Sharpe | Max drawdown | ROC AUC |
+| --- | ---: | ---: | ---: | ---: |
+| Logistic regression | 11.50% | 0.721 | -33.72% | 0.494 |
+| Nested ML + momentum | 11.42% | 0.717 | -33.72% | 0.501 |
+| SPY buy and hold | 13.18% | 0.789 | -33.72% | n/a |
+| SPY above 50-day MA | 5.11% | 0.524 | -21.09% | n/a |
+
+![Robustness analysis](results/robustness.png)
+
+The ensemble slightly improves ranking ability but does not improve trading
+performance. Buy-and-hold has the highest point-estimate Sharpe. The
+ensemble's 95% moving-block-bootstrap Sharpe interval is 0.143 to 1.431, which
+is wide and overlaps the alternatives. Newey--West and bootstrap estimates,
+the full 0--50 bps cost sweep, and fold-level ensemble weights are saved in
+the result artifacts. See [`results/MODEL_CARD.md`](results/MODEL_CARD.md) for
+the intended use, validation design, conclusion, and limitations.
+
 ### Feature importance and ablation
 
 Permutation importance is calculated only on each unseen test fold. A feature
@@ -117,8 +141,16 @@ treatment be checked from the file alone:
 ```text
 date,close,fold_id,train_start,train_end,test_start,test_end,target,
 probability,position,market_return,gross_strategy_return,cost_bps,cost,
-net_strategy_return,benchmark_ma50_return
+net_strategy_return,benchmark_ma50_position,benchmark_ma50_gross_return,
+benchmark_ma50_cost,benchmark_ma50_return
 ```
+
+The robustness command additionally writes `robustness_comparison.csv`,
+`cost_sensitivity.csv`, `uncertainty.csv`, `ensemble_predictions.csv`,
+`robustness.png`, and `MODEL_CARD.md`. Ensemble prediction rows include the
+model probability, momentum probability, and training-fold-selected blend
+weight. Moving-average rows separately expose position, gross return, cost,
+and net return.
 
 `fold_id` and the four window boundaries make each row traceable to the exact
 train/test split that produced it, so `train_end < test_start` is verifiable
@@ -219,6 +251,16 @@ quantbot analyze-features \
   --out results
 ```
 
+Run the nested ensemble, transaction-cost sweep, and uncertainty analysis:
+
+```bash
+quantbot robustness \
+  --start 2010-01-01 \
+  --end 2024-12-31 \
+  --bootstrap-samples 1000 \
+  --out results
+```
+
 ## Data sources & reproducibility
 
 Every headline number is tied to the command that regenerates it, and the
@@ -244,12 +286,12 @@ come from:
 quantbot walk-forward --start 2010-01-01 --end 2024-12-31 --out results
 ```
 
-The model-comparison and feature-analysis tables come from the `compare-models`
-and `analyze-features` commands shown above, with the same dates. Runs are
-deterministic given the same input bars: folds are calendar-based, and every
-estimator fixes `random_state`. Because `predictions.csv` carries the fold
-boundaries and the gross/cost/net split, the reported metrics can be
-recomputed from that file alone, without rerunning the models.
+The model-comparison, feature-analysis, and robustness tables come from the
+`compare-models`, `analyze-features`, and `robustness` commands shown above,
+with the same dates. Runs are deterministic given the same input bars: folds
+are calendar-based, and every estimator and bootstrap fixes `random_state`.
+Because the prediction files carry fold boundaries and gross/cost/net splits,
+the reported metrics can be recomputed without rerunning the models.
 
 ## Alpaca paper execution
 

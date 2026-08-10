@@ -21,7 +21,7 @@ from .data.loader import load_ohlcv, load_prices
 from .execution import run_daily_execution
 from .models import MODEL_NAMES, get_model_factory
 from .signals.momentum import CrossSectionalMomentum
-from .validation import run_model_comparison, run_spy_walk_forward
+from .validation import run_model_comparison, run_robustness_analysis, run_spy_walk_forward
 
 DEFAULT_TICKERS = "AAPL,MSFT,NVDA,AMZN,JPM,XOM,PG,JNJ,KO,CAT"
 
@@ -160,6 +160,29 @@ def _analyze_features(args: argparse.Namespace) -> int:
     return 0
 
 
+def _robustness(args: argparse.Namespace) -> int:
+    cache_dir = Path(args.cache_dir) if args.cache_dir else None
+    market = load_ohlcv("SPY", start=args.start, end=args.end, cache_dir=cache_dir)
+    result = run_robustness_analysis(
+        market["close"],
+        volume=market["volume"],
+        min_train_years=args.min_train_years,
+        test_years=args.test_years,
+        entry_threshold=args.entry_threshold,
+        exit_threshold=args.exit_threshold,
+        cost_bps=args.cost_bps,
+        n_bootstrap=args.bootstrap_samples,
+        random_state=args.random_state,
+        out_dir=args.out,
+    )
+    print("\nCommon-date comparison")
+    print(result.comparison.to_string(float_format=lambda value: f"{value:,.4f}"))
+    print("\nUncertainty estimates")
+    print(result.uncertainty.to_string(float_format=lambda value: f"{value:,.4f}"))
+    print(f"\nRobustness report and model card written to {args.out}")
+    return 0
+
+
 def _load_dotenv() -> None:
     """Load Alpaca credentials from a local .env if python-dotenv is available."""
     try:
@@ -265,6 +288,23 @@ def main(argv: list[str] | None = None) -> int:
     analysis.add_argument("--cache-dir", default=None, help="optional price-cache directory")
     analysis.add_argument("--out", default="results")
     analysis.set_defaults(func=_analyze_features)
+
+    robustness = sub.add_parser(
+        "robustness",
+        help="run nested ensemble, cost sensitivity, and uncertainty analysis",
+    )
+    robustness.add_argument("--start", default="2010-01-01")
+    robustness.add_argument("--end", default="2024-12-31")
+    robustness.add_argument("--min-train-years", type=int, default=5)
+    robustness.add_argument("--test-years", type=int, default=1)
+    robustness.add_argument("--entry-threshold", type=float, default=0.55)
+    robustness.add_argument("--exit-threshold", type=float, default=0.45)
+    robustness.add_argument("--cost-bps", type=float, default=5.0)
+    robustness.add_argument("--bootstrap-samples", type=int, default=1_000)
+    robustness.add_argument("--random-state", type=int, default=42)
+    robustness.add_argument("--cache-dir", default=None, help="optional price-cache directory")
+    robustness.add_argument("--out", default="results")
+    robustness.set_defaults(func=_robustness)
 
     trade = sub.add_parser(
         "trade",

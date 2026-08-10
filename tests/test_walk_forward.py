@@ -117,6 +117,9 @@ def test_predictions_artifact_carries_auditable_columns():
         "cost_bps",
         "cost",
         "net_strategy_return",
+        "benchmark_ma50_position",
+        "benchmark_ma50_gross_return",
+        "benchmark_ma50_cost",
         "benchmark_ma50_return",
     }
     assert required <= set(preds.columns)
@@ -132,6 +135,11 @@ def test_predictions_artifact_carries_auditable_columns():
     np.testing.assert_allclose(
         (preds["gross_strategy_return"] - preds["cost"]).to_numpy(),
         preds["net_strategy_return"].to_numpy(),
+        atol=1e-12,
+    )
+    np.testing.assert_allclose(
+        (preds["benchmark_ma50_gross_return"] - preds["benchmark_ma50_cost"]).to_numpy(),
+        preds["benchmark_ma50_return"].to_numpy(),
         atol=1e-12,
     )
 
