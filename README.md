@@ -4,13 +4,14 @@
 ![Coverage](docs/coverage.svg)
 [![Python 3.11--3.13](https://img.shields.io/badge/python-3.11--3.13-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 
-A systematic trading research platform: research a signal, backtest it without
-lying to yourself, then run it against a paper account.
+We built quantbot as a summer project after finishing bachelor's degrees in
+Information Science and AI. It covers the path from historical market data to
+backtesting and Alpaca paper trading.
 
-The point of this repo is not to get rich. It is to do the boring things
-correctly—no lookahead, honest transaction costs, and benchmarks you actually
-have to beat—because that is what separates a real backtest from a plot that
-goes up.
+Our main question was whether a small set of technical and volume features
+could improve daily SPY decisions. The repository also became a practical way
+to learn about time-series validation, transaction costs, deployment, and
+monitoring in one codebase.
 
 ![quantbot command-line demo](docs/demo.gif)
 
@@ -37,10 +38,10 @@ turnover costs.
 
 ![SPY walk-forward performance](results/performance.png)
 
-The classifier trails buy-and-hold in this sample. That is the honest
-out-of-sample result; the validation and reporting infrastructure is the
-deliverable, not a tuned winning backtest. Its high turnover also shows that a
-probability threshold alone is not yet a practical execution policy.
+The classifier trails buy-and-hold in this sample. It also changes position
+870 times, so the first threshold policy is too active to be useful after
+costs. We kept this run in the repository because it led to the lower-turnover
+hysteresis policy used in the model comparison below.
 
 ### Model comparison
 
@@ -57,11 +58,10 @@ period.
 
 ![Model comparison](results/model_comparison.png)
 
-The comparison does not show a strong predictive edge: both ROC-AUC values are
-close to random ranking. Logistic regression's trading result mainly comes
-from staying invested for long stretches, as its high recall and low number of
-position changes make clear. Gradient boosting trades much more frequently
-without improving risk-adjusted performance.
+Both ROC-AUC values stay close to 0.5. Logistic regression spends most of the
+period invested and changes position only 18 times, which explains more of its
+trading result than classification quality does. Gradient boosting trades far
+more often without producing a better risk-adjusted return.
 
 ### Robustness and nested ensemble
 
@@ -79,13 +79,12 @@ outer test fold is used exactly once and never participates in tuning.
 
 ![Robustness analysis](results/robustness.png)
 
-The ensemble slightly improves ranking ability but does not improve trading
-performance. Buy-and-hold has the highest point-estimate Sharpe. The
-ensemble's 95% moving-block-bootstrap Sharpe interval is 0.143 to 1.431, which
-is wide and overlaps the alternatives. Newey--West and bootstrap estimates,
-the full 0--50 bps cost sweep, and fold-level ensemble weights are saved in
-the result artifacts. See [`results/MODEL_CARD.md`](results/MODEL_CARD.md) for
-the intended use, validation design, conclusion, and limitations.
+The ensemble moves ROC AUC from 0.494 to 0.501, but its Sharpe ratio remains
+below logistic regression and buy-and-hold. Its 95% moving-block-bootstrap
+Sharpe interval is 0.143 to 1.431, so the estimate is also quite uncertain.
+The Newey--West output, 0--50 bps cost sweep, and fold-level blend weights are
+saved with the other results. [`results/MODEL_CARD.md`](results/MODEL_CARD.md)
+summarizes the setup and limitations.
 
 ### Feature importance and ablation
 
@@ -181,13 +180,10 @@ monthly rebalance:
 
 ![Momentum performance](docs/performance.png)
 
-The strategy loses to buy and hold, and that is the honest result. Long/short
-momentum on ten mega-caps over a strong equity decade fights a rising market on
-the short leg, while ten names give the cross-sectional ranking little to sort.
-
-It is reported as-is on purpose. Tuning the lookback, universe, and date range
-until the blue line wins is easy and produces a number that means nothing out
-of sample.
+This version of momentum loses to buy-and-hold. The short side works against a
+rising market for much of the sample, and a ten-stock universe leaves little
+room for cross-sectional ranking. We did not retune the dates or universe after
+seeing the result.
 
 ## Install
 
@@ -296,8 +292,8 @@ quantbot robustness \
 
 ## Data sources & reproducibility
 
-Every headline number is tied to the command that regenerates it, and the
-commands read from one documented source.
+The commands below regenerate the tables and charts from the documented data
+source.
 
 **Source.** Prices are adjusted OHLCV bars from Yahoo Finance, pulled with
 `yfinance` in `data/loader.py` and cached to Parquet so a rerun does not refetch.
@@ -382,10 +378,10 @@ impact, or regulatory fees.
 ### Durable paper history and monitoring
 
 Each `quantbot trade` run records the decision, proposed orders, observed
-positions, cash, and account equity in a versioned SQLite database. The unique
-key is the signal date, symbol, and model, so rerunning the same daily decision
-updates one record instead of inventing duplicate history. A successful submit
-cannot be downgraded to a dry run by a later retry.
+positions, cash, and account equity in a versioned SQLite database. The signal
+date, symbol, and model form a unique key, so a retry updates the existing row.
+If an earlier run submitted an order, a later dry run does not overwrite that
+status.
 
 Generate an offline report without Alpaca credentials:
 
@@ -485,12 +481,11 @@ python scripts/build_demo_gif.py
 CI enforces at least 80% coverage and verifies that `docs/coverage.svg` matches
 the measured result.
 
-Three decisions carry most of the weight:
+Some implementation details that matter:
 
-**Signals return weights, not orders.** A signal says “I want to be 30% long
-NVDA,” not “buy 12 shares.” Position sizing and order generation live in the
-broker layer, so the same strategy object drives both the backtester and paper
-account.
+**Signals return weights, not orders.** Position sizing and order generation
+live in the broker layer, so the backtester and paper account can consume the
+same strategy output.
 
 **Lookahead is prevented at execution.** `run_backtest` applies
 `weights.shift(1)`, so a signal computed at the close of day *t* can only earn
@@ -519,8 +514,8 @@ signal execution timing, and the walk-forward guarantees:
 
 - **Survivorship bias.** Tickers are selected today; failed companies are
   absent. Real cross-sectional research needs a point-in-time universe.
-- **Simple classifier.** The SPY experiment is an infrastructure MVP, not a
-  claim that logistic regression on technical features is the best model.
+- **Simple classifier.** The SPY experiment compares a small set of baseline
+  models; it is not a broad model search.
 - **Costs are a flat estimate.** There is no market-impact model, short-borrow
   cost, or crisis-dependent spread.
 - **Daily close-to-close only.** There is no intraday execution, gap model, or

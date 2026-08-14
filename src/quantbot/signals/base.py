@@ -22,8 +22,7 @@ class Signal(ABC):
         """Return target weights, indexed and columned exactly like ``prices``.
 
         The weights on row *t* may only use information available at the close
-        of day *t*. Any use of later data is a lookahead bug and will silently
-        produce a beautiful, worthless equity curve.
+        of day *t*. Using later data here would introduce lookahead bias.
         """
 
     def __repr__(self) -> str:

@@ -22,7 +22,7 @@ SCENES = (
         (
             "Nested ML + momentum   Sharpe 0.717   ROC AUC 0.501",
             "SPY buy and hold      Sharpe 0.789",
-            "Conclusion: no deployable alpha - reported honestly.",
+            "Result: no improvement over buy-and-hold in this run.",
         ),
     ),
     (
