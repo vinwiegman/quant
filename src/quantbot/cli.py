@@ -43,7 +43,7 @@ def _backtest(args: argparse.Namespace) -> int:
     weights = signal.generate(prices)
     result = run_backtest(prices, weights, cost_bps=args.cost_bps)
 
-    # Equal-weight buy and hold, the honest thing to compare against.
+    # Equal-weight buy-and-hold benchmark.
     benchmark = prices.pct_change().fillna(0.0).mean(axis=1)
 
     table = result.summary(benchmark=benchmark)

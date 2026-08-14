@@ -1,10 +1,10 @@
-# Model card: SPY daily direction research
+# SPY daily direction model card
 
 ## Intended use
 
-Research and Alpaca paper trading only. The system predicts next-session SPY direction from
-point-in-time daily price and volume features. It is not financial advice and is not approved
-for live-capital execution.
+This experiment predicts next-session SPY direction from daily price and volume features.
+We use it for research and Alpaca paper trading; live-capital trading is outside the scope of
+this project.
 
 ## Validation design
 
@@ -25,12 +25,12 @@ for live-capital execution.
 | SPY buy and hold | 0.789 | 13.2% | -33.7% | n/a |
 | SPY above 50-day MA | 0.524 | 5.1% | -21.1% | n/a |
 
-The highest point-estimate Sharpe belongs to **SPY buy and hold**. The ensemble's 95% block-bootstrap
-Sharpe interval is **[0.143, 1.431]**.
+The highest Sharpe in this run is **SPY buy and hold**. The ensemble's 95% block-bootstrap Sharpe
+interval is **[0.143, 1.431]**.
 
 ## Conclusion
 
-The ensemble does not beat buy-and-hold on out-of-sample Sharpe. It remains a research candidate and is not evidence of deployable alpha.
+The ensemble does not beat buy-and-hold on out-of-sample Sharpe in this test. We keep logistic regression as the simpler paper-trading baseline, not as a claim that it beats the market.
 
 ## Known limitations
 
@@ -38,4 +38,4 @@ The ensemble does not beat buy-and-hold on out-of-sample Sharpe. It remains a re
 - Flat transaction costs omit spread variation, market impact, tax, and slippage shocks.
 - Multiple strategy variants create selection bias; the reported uncertainty does not fully
   correct for every experiment attempted by the team.
-- Paper fills do not reproduce real queue position or emotional/operational risk.
+- Paper fills do not reproduce real queue position, slippage, or operational failures.

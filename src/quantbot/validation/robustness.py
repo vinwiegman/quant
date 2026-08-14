@@ -364,11 +364,12 @@ def _write_model_card(result: RobustnessResult, path: Path, cost_bps: float) -> 
     interval = result.uncertainty.loc["Nested ML + momentum"]
     winner = result.comparison["Sharpe"].astype(float).idxmax()
     conclusion = (
-        "The ensemble does not beat buy-and-hold on out-of-sample Sharpe. It remains a "
-        "research candidate and is not evidence of deployable alpha."
+        "The ensemble does not beat buy-and-hold on out-of-sample Sharpe in this test. "
+        "We keep logistic regression as the simpler paper-trading baseline, not as a claim "
+        "that it beats the market."
         if float(ensemble["Sharpe"]) <= float(benchmark["Sharpe"])
-        else "The ensemble beats buy-and-hold on point-estimate Sharpe, but uncertainty and "
-        "paper-trading evidence are still required before treating the result as durable."
+        else "The ensemble has the higher point estimate in this test, but the uncertainty "
+        "interval and paper results still need to be considered."
     )
     ml_row = _model_card_row("Logistic", ml)
     ensemble_row = _model_card_row("Nested ML + momentum", ensemble)
@@ -377,13 +378,13 @@ def _write_model_card(result: RobustnessResult, path: Path, cost_bps: float) -> 
     sharpe_interval = (
         f"[{float(interval['Sharpe CI lower']):.3f}, {float(interval['Sharpe CI upper']):.3f}]"
     )
-    text = f"""# Model card: SPY daily direction research
+    text = f"""# SPY daily direction model card
 
 ## Intended use
 
-Research and Alpaca paper trading only. The system predicts next-session SPY direction from
-point-in-time daily price and volume features. It is not financial advice and is not approved
-for live-capital execution.
+This experiment predicts next-session SPY direction from daily price and volume features.
+We use it for research and Alpaca paper trading; live-capital trading is outside the scope of
+this project.
 
 ## Validation design
 
@@ -404,8 +405,8 @@ for live-capital execution.
 {benchmark_row}
 {trend_row}
 
-The highest point-estimate Sharpe belongs to **{winner}**. The ensemble's 95% block-bootstrap
-Sharpe interval is **{sharpe_interval}**.
+The highest Sharpe in this run is **{winner}**. The ensemble's 95% block-bootstrap Sharpe
+interval is **{sharpe_interval}**.
 
 ## Conclusion
 
@@ -417,7 +418,7 @@ Sharpe interval is **{sharpe_interval}**.
 - Flat transaction costs omit spread variation, market impact, tax, and slippage shocks.
 - Multiple strategy variants create selection bias; the reported uncertainty does not fully
   correct for every experiment attempted by the team.
-- Paper fills do not reproduce real queue position or emotional/operational risk.
+- Paper fills do not reproduce real queue position, slippage, or operational failures.
 """
     path.write_text(text, encoding="utf-8")
 
